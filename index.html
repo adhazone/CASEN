@@ -36,42 +36,55 @@ pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob(['importScri
 function trim(c){const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let y=c.height-1;outer:for(;y>0;y--)for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;if(d[i]<235||d[i+1]<235||d[i+2]<235)break outer}
  const h=Math.min(c.height,y+10);if(h>=c.height)return c;const n=document.createElement('canvas');n.width=c.width;n.height=h;n.getContext('2d').drawImage(c,0,0);return n}
 function stitch(cs){if(!cs.length)return null;const w=Math.max(...cs.map(c=>c.width)),h=cs.reduce((a,c)=>a+c.height,0),c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);let y=0;cs.forEach(k=>{g.drawImage(k,0,y);y+=k.height});return c.toDataURL('image/jpeg',.72)}
+const HDR=/^TES (WAWASAN KEBANGSAAN|INTELEGENS?[IA]* UMUM|KARAKTERISTIK PRIBADI)$/i;
+const cl=a=>{const rs=[];for(const i of a){const r=rs[rs.length-1];if(r&&Math.abs(i.y-r.y)<4)r.items.push(i);else rs.push({y:i.y,items:[i]})}
+ rs.forEach(r=>{r.items.sort((a,b)=>a.x-b.x);r.t=r.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();r.top=Math.min(...r.items.map(i=>i.y-i.h));
+  const f=/^\d{1,3}$/.test(r.items[0].s)?1:0,rest=r.items.slice(f),mh=Math.max(...rest.map(i=>i.h),1);
+  r.g=!/[A-Za-z]/.test(r.t.replace(/^\d{1,3}\s/,''))||(rest.length>1&&rest.some(i=>i.h<mh*.8))});return rs};
 async function parsePdf(file,onP){
- const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,Z=1.6,Q={cur:null,last:0,out:{}},K={cur:null,last:0,out:{}};
+ const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,Z=1.6,mk=()=>({sec:'X',cur:null,last:0,out:{}}),Q=mk(),K=mk();let ord=0;
+ const ent=(M,n)=>{const k=M.sec+'|'+n;return M.out[k]||(M.out[k]={sec:M.sec,n,ord:++ord,c:[],t:[]})};
  for(let p=1;p<=pdf.numPages;p++){
   onP(p,pdf.numPages);
   const pg=await pdf.getPage(p),W=pg.getViewport({scale:1}).width,Hh=pg.getViewport({scale:1}).height,tc=await pg.getTextContent();
-  const its=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str,x:i.transform[4],w:i.width,y:Hh-i.transform[5],h:i.height||10})).filter(i=>i.y<Hh*.93),segs=[];
-  const isKey=/Jawab\s*an\s*:/i.test(its.map(i=>i.s).join(' ')),M=isKey?K:Q,ent=n=>M.out[n]||(M.out[n]={c:[],t:[]});
-  for(const k of[0,1]){
-   const it=its.filter(i=>(i.x<W/2)==(k==0)).sort((a,b)=>a.y-b.y);if(!it.length)continue;
-   const ls=[];for(const i of it){const l=ls[ls.length-1];if(l&&Math.abs(i.y-l.y)<4)l.items.push(i);else ls.push({items:[i]})}
-   const x0=Math.min(...it.map(i=>i.x)),x1=Math.max(...it.map(i=>i.x+i.w)),top=Hh*.03,bot=Hh*.93,st=[];let own=M.cur;
-   for(const l of ls){
-    l.items.sort((a,b)=>a.x-b.x);l.t=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();l.top=Math.min(...l.items.map(i=>i.y-i.h));
-    const m=isKey?l.t.match(/^(\d{1,3})\s*Jawab\s*an\s*:?\s*([A-E])\b/i):l.t.match(/^(\d{1,3})\s*\.\s*\S/),n=m&&+m[1];
-    if(m&&(isKey||(l.items[0].x<x0+45&&(!M.last||(n>M.last&&n<=M.last+3))))){st.push({n,top:l.top});own=n;M.last=n;if(isKey)ent(n).a=m[2].toUpperCase()}
-    if(own!=null)ent(own).t.push(l.t)}
-   const f=st.length?st[0].top:bot;
-   if(M.cur!=null&&f-top>14)segs.push({n:M.cur,y0:top,y1:f-3,x0,x1,M});
-   st.forEach((s,j)=>segs.push({n:s.n,y0:s.top-3,y1:j+1<st.length?st[j+1].top-3:bot,x0,x1,M}));M.cur=own}
+  let its=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str,x:i.transform[4],w:i.width,y:Hh-i.transform[5],h:i.height||10})).filter(i=>i.y<Hh*.93).sort((a,b)=>a.y-b.y);
+  const isKey=/Jawab\s*an\s*:/i.test(its.map(i=>i.s).join(' ')),M=isKey?K:Q,segs=[];
+  const hd=cl(its).filter(r=>HDR.test(r.t)).map(r=>({y:r.y,sec:/WAWASAN/i.test(r.t)?'TWK':/INTELEGEN/i.test(r.t)?'TIU':'TKP'}));
+  its=its.filter(i=>!hd.some(h=>Math.abs(i.y-h.y)<4));
+  const bands=[];let y0=0,sc=null;for(const h of hd){bands.push({y0,y1:h.y-24,sc});y0=h.y+14;sc=h.sec}bands.push({y0,y1:Hh*.93,sc});
+  for(const b of bands){
+   if(b.sc&&M.sec!==b.sc){M.sec=b.sc;M.last=0;M.cur=null}
+   for(const k of[0,1]){
+    const it=its.filter(i=>i.y>=b.y0&&i.y<b.y1&&(i.x<W/2)==(k==0));if(!it.length)continue;
+    const ls=cl(it),x0=Math.min(...it.map(i=>i.x)),x1=Math.max(...it.map(i=>i.x+i.w)),top=Math.max(b.y0,Hh*.03),bot=b.y1,st=[];let own=M.cur;
+    for(const l of ls){
+     const m=l.t.match(/^(\d{1,3})\s+\S/),n=m&&+m[1];
+     if(m&&l.items[0].x<x0+45&&(M.last?(n>M.last&&n<=M.last+2):n<=2)){st.push({n,top:l.top});own=n;M.last=n}
+     if(own!=null){const e=ent(M,own);e.t.push(l.t);if(l.g)e.g=1}}
+    const f=st.length?st[0].top:bot;
+    if(M.cur!=null&&f-top>14)segs.push({e:ent(M,M.cur),y0:top,y1:f-3,x0,x1});
+    st.forEach((s,j)=>segs.push({e:ent(M,s.n),y0:s.top-3,y1:j+1<st.length?st[j+1].top-3:bot,x0,x1}));M.cur=own}}
   if(!segs.length)continue;
   const v2=pg.getViewport({scale:Z}),cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
   cv.width=v2.width;cv.height=v2.height;cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
   await pg.render({canvasContext:cx,viewport:v2}).promise;
   for(const s of segs){const sx=Math.max(0,s.x0-8)*Z,w=Math.min(W,s.x1+8)*Z-sx,sy=Math.max(0,s.y0)*Z,h=(s.y1*Z)-sy;if(h<6||w<6)continue;
-   const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(cv,sx,sy,w,h,0,0,w,h);ent(s.n).c.push(trim(c))}}
+   const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(cv,sx,sy,w,h,0,0,w,h);s.e.c.push(trim(c))}}
  return{q:Q.out,k:K.out}}
-function keyInfo(o){const t=o.t.join(' '),tp=(t.match(/Topik\s*:\s*(.+?)(?=\s+Pilih|\s*$)/i)||[])[1],pts={};
- o.t.forEach(l=>{const m=l.trim().match(/^([A-E])\s+([1-5])$/);if(m)pts[m[1]]=+m[2]});
- return{topic:tp?tp.slice(0,70).trim():'',pts:Object.keys(pts).length>=4?pts:null}}
+function keyInfo(o){const L=o.t,T=L.join(' '),a=(T.match(/Jawab\s*an\s*:?\s*([A-E])\b/i)||[])[1],pts={};
+ L.forEach(l=>{const m=l.match(/^([A-E])\s+([1-5])$/);if(m)pts[m[1]]=+m[2]});
+ let tp='';const i=L.findIndex(l=>/^Topik\s*:/i.test(l));
+ if(i>=0){tp=L[i].replace(/^Topik\s*:\s*/i,'');for(let j=i+1;j<L.length&&/^[a-z]/.test(L[j]);j++)tp+=' '+L[j];tp=tp.replace(/mengodinir/i,'mengoordinasi').trim().slice(0,80)}
+ return{a:a&&a.toUpperCase(),topic:tp,pts:Object.keys(pts).length>=4?pts:null}}
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const TN={TIU:'Tes Intelegensia Umum (TIU)',TWK:'Tes Wawasan Kebangsaan (TWK)',TKP:'Tes Karakteristik Pribadi (TKP)'};
-const jn=a=>{let s='';a.forEach(l=>{if(!l)return;s=!s?l:/\w-$/.test(s)?s.slice(0,-1)+l:/^([•·▪]|\d\)|[-–]\s)/.test(l)?s+'\n'+l:s+' '+l});return s.trim()};
-function qText(L){L=L.slice();if(L.length)L[0]=L[0].replace(/^\d{1,3}\s*\.\s*/,'');const stem=[],opts=[];let e=0,cur=stem;
+const jn=a=>{let s='';a.forEach(l=>{if(!l)return;s=!s?l:/\w-$/.test(s)?s.slice(0,-1)+l:/^([•·▪⇲]|\d\)|[-–]\s)/.test(l)?s+'\n'+l:s+' '+l});return s.trim()};
+function qText(L){L=L.slice();if(L.length)L[0]=L[0].replace(/^\d{1,3}\s*\.?\s+/,'');const stem=[],opts=[];let e=0,cur=stem;
  for(const l of L){const m=e<5&&l.match(new RegExp('^'+'ABCDE'[e]+'(?:\\.\\s*|\\s+)(.*)$'));if(m){e++;opts.push(cur=[m[1]]);continue}cur.push(l)}
  return{stem:jn(stem),opts:opts.map(jn)}}
-function expText(L){let s=0;const R=[];L.slice(1).forEach(l=>{if(/^Topik\s*:/i.test(l))s=1;else if(/^Pilih/.test(l))s=0;if(!s&&!/^([A-E]\s+[1-5]|Pilihan Jawaban.*)$/.test(l))R.push(l)});return jn(R)}
+function expText(L){const R=[];let sk=0;L.forEach((l,i)=>{if(/^Topik\s*:/i.test(l)){sk=1;return}if(sk&&/^[a-z]/.test(l))return;sk=0;
+ l=l.replace(i?/^$/:/^\d{1,3}\s+/,'').replace(/▶?\s*Jawab\s*an\s*:?\s*[A-E]\.?/gi,'').trim();if(l&&!/^([A-E]\s+[1-5]|Pilihan Jawaban.*)$/.test(l))R.push(l)});return jn(R)}
+const expHtml=q=>q.eImg&&q.expImg?'<img class="q" src="'+q.expImg+'">':(q.exp?'<p style="white-space:pre-line">'+esc(q.exp)+'</p>':'')+(q.expImg?'<details><summary>Lihat versi gambar</summary><img class="q" src="'+q.expImg+'"></details>':'');
 const qBody=q=>q.img?'<img class="q" src="'+q.img+'">':'<p style="white-space:pre-line">'+esc(q.txt)+'</p>';
 const optList=(q,ro)=>q.img?(ro?'':'<div class="row" style="margin:10px 0">'+'ABCDE'.split('').map(l=>'<button class="opt '+(S.ans[S.i]==l?'s':'')+'" onclick="pick(\''+l+'\')">'+l+'</button>').join('')+'</div>'):'ABCDE'.split('').map((l,k)=>'<div class="o '+(!ro&&S.ans[S.i]==l?'s':'')+'"'+(ro?'':' onclick="pick(\''+l+'\')"')+'><b class="lt">'+l+'</b><span>'+esc(q.opts[k]||'')+'</span></div>').join('');
 /* ---------- tampilan ---------- */
@@ -81,17 +94,18 @@ async function vHome(){const ss=await allSets();
  H('<h2>Try Out CASN</h2><div class="card">'+(ss.length?ss.map(s=>'<label class="row"><input type="checkbox" class="ck" value="'+s.id+'" data-n="'+s.qs.length+'" style="width:auto"><span style="flex:1">'+s.name+' <span class="mu">'+s.qs.length+' soal · '+[...new Set(s.qs.map(q=>q.t))].join('+')+'</span></span><button type="button" onclick="del('+s.id+')">Hapus</button></label>').join(''):'<p class="mu">Belum ada soal. Impor PDF dulu.</p>')+'</div><div class="card">Waktu (menit)<input id="tm" type="number" value="100"><p class="mu">Otomatis menyesuaikan jumlah soal (110 soal = 100 menit), bisa kamu ubah.</p></div><div class="row"><button class="p" onclick="start()">Mulai tes</button><button onclick="vImport()">Impor soal</button><button onclick="vRekap()">Rekap</button></div><p class="mu">Soal tersimpan hanya di browser ini, tidak ada di GitHub.</p>');
  document.querySelectorAll('.ck').forEach(c=>c.onchange=()=>{const n=[...document.querySelectorAll('.ck:checked')].reduce((a,x)=>a+ +x.dataset.n,0);$('#tm').value=Math.max(1,Math.round(n*100/110))})}
 async function del(id){if(confirm('Hapus set ini?')){await delSet(id);vHome()}}
-function vImport(){H('<h2>Impor soal</h2><div class="card"><input id="nm" placeholder="Nama set, mis. Paket 2 TIU"><select id="ty"><option>TIU</option><option>TWK</option><option>TKP</option><option value="SKD">Semua (TWK 1-30, TIU 31-65, TKP 66-110)</option></select><p class="mu">PDF soal + kunci (satu file)</p><input type="file" id="fs" accept="application/pdf"><button class="p" id="go">Proses</button><p id="st" class="mu"></p></div><button onclick="vHome()">Kembali</button>');
+function vImport(){H('<h2>Impor soal</h2><div class="card"><input id="nm" placeholder="Nama set, mis. Paket 2 TIU"><select id="ty"><option value="">Otomatis dari judul bagian</option><option>TIU</option><option>TWK</option><option>TKP</option></select><p class="mu">PDF soal + kunci (satu file)</p><input type="file" id="fs" accept="application/pdf"><button class="p" id="go">Proses</button><p id="st" class="mu"></p></div><button onclick="vHome()">Kembali</button>');
  $('#go').onclick=async()=>{const f=$('#fs').files[0],st=$('#st');if(!f){st.textContent='Pilih PDF dulu.';return}
   try{const {q,k:key}=await parsePdf(f,(p,n)=>st.textContent='Membaca halaman '+p+'/'+n+'...'),ty=$('#ty').value;
-   const qs=Object.keys(q).map(Number).sort((a,b)=>a-b).map(n=>{const ke=key[n],i=ke?keyInfo(ke):{},x=qText(q[n].t),nd=x.opts.length<5||x.opts.some(o=>!o)||/\b(tabel|gambar|matriks|diagram|grafik|diputar|cermin)\b/i.test(x.stem);return{n,txt:x.stem,opts:x.opts,t:ty=='SKD'?(n<=30?'TWK':n<=65?'TIU':'TKP'):ty,img:nd?stitch(q[n].c):null,key:ke&&ke.a,pts:i.pts,topic:i.topic||'',exp:ke?expText(ke.t):'',expImg:ke?stitch(ke.c):null}});
+   const qs=Object.values(q).sort((a,b)=>a.ord-b.ord).map(e=>{const ke=key[e.sec+'|'+e.n],i=ke?keyInfo(ke):{},x=qText(e.t),nd=e.g||x.opts.length<5||x.opts.some(o=>!o)||/\b(tabel|gambar|matriks|diagram|grafik|diputar|cermin)\b/i.test(x.stem);
+    return{n:e.n,t:e.sec!='X'?e.sec:(ty||'TIU'),txt:x.stem,opts:x.opts,img:nd?stitch(e.c):null,key:i.a,pts:i.pts,topic:i.topic||'',exp:ke?expText(ke.t):'',expImg:ke?stitch(ke.c):null,eImg:!!(ke&&(ke.g||/[=≈×]/.test(ke.t.join(' '))))}});
    if(!qs.length)throw new Error('tidak ada soal terbaca');pending={id:Date.now(),name:$('#nm').value||f.name,qs};vReview()}catch(e){st.textContent='Gagal: '+e.message}}}
-function vReview(){const qs=pending.qs,nums=qs.map(q=>q.n),miss=[];for(let i=nums[0];i<=nums[nums.length-1];i++)if(!nums.includes(i))miss.push(i);
+function vReview(){const qs=pending.qs,miss=[];['TWK','TIU','TKP'].forEach(t=>{const ns=qs.filter(q=>q.t==t).map(q=>q.n);for(let i=1;i<=Math.max(0,...ns);i++)if(!ns.includes(i))miss.push(t+' '+i)});
  const nk=qs.filter(q=>!q.key).map(q=>q.n),tk=qs.some(q=>q.t=='TKP'&&!q.pts);
- H('<h2>Cek hasil</h2><div class="card">'+qs.length+' soal terbaca.'+(miss.length?'<br>Nomor tidak terbaca: '+miss.join(', '):'')+(nk.length?'<br>Tanpa kunci: '+nk.join(', '):'')+(tk?'<br>Ada TKP tanpa tabel poin (nilainya 0).':'')+'</div><div class="card"><b>Isi topik massal</b><div class="row"><input id="a" type="number" placeholder="dari" style="width:80px"><input id="b" type="number" placeholder="sampai" style="width:80px"><input id="tp" placeholder="Topik, mis. Figural" style="flex:1"><button onclick="setTp()">Isi</button></div></div><div id="lst"></div><div class="row"><button class="p" onclick="saveSet()">Simpan</button><button onclick="vHome()">Batal</button></div>');lst()}
+ H('<h2>Cek hasil</h2><div class="card">'+qs.length+' soal terbaca ('+['TWK','TIU','TKP'].map(t=>t+' '+qs.filter(q=>q.t==t).length).join(', ')+').'+(miss.length?'<br>Nomor tidak terbaca: '+miss.join(', '):'')+(nk.length?'<br>Tanpa kunci: '+nk.join(', '):'')+(tk?'<br>Ada TKP tanpa tabel poin (nilainya 0).':'')+'</div><div class="card"><b>Isi topik massal</b><div class="row"><select id="bt" style="width:80px"><option>TIU</option><option>TWK</option><option>TKP</option></select><input id="a" type="number" placeholder="dari" style="width:70px"><input id="b" type="number" placeholder="sampai" style="width:80px"><input id="tp" placeholder="Topik, mis. Figural" style="flex:1"><button onclick="setTp()">Isi</button></div></div><div id="lst"></div><div class="row"><button class="p" onclick="saveSet()">Simpan</button><button onclick="vHome()">Batal</button></div>');lst()}
 function lst(){$('#lst').innerHTML=pending.qs.map((q,i)=>'<div class="card" onclick="pv('+i+')">No. '+q.n+' · '+q.t+' · '+(q.t=='TKP'?(q.pts?'poin '+Object.entries(q.pts).map(e=>e.join('=')).join(' '):'tanpa poin'):'kunci '+(q.key||'-'))+' · '+(q.img?'gambar':'teks')+' · '+(q.topic||'(tanpa topik)')+'<div id="pv'+i+'"></div></div>').join('')}
-function pv(i){const e=$('#pv'+i),q=pending.qs[i];e.innerHTML=e.innerHTML?'':qBody(q)+optList(q,1)+(q.exp?'<p style="white-space:pre-line">'+esc(q.exp)+'</p>':'')}
-function setTp(){const a=+$('#a').value,b=+$('#b').value,t=$('#tp').value.trim();pending.qs.forEach(q=>{if(q.n>=a&&q.n<=b)q.topic=t});lst()}
+function pv(i){const e=$('#pv'+i),q=pending.qs[i];e.innerHTML=e.innerHTML?'':qBody(q)+optList(q,1)+expHtml(q)}
+function setTp(){const a=+$('#a').value,b=+$('#b').value,t=$('#tp').value.trim();pending.qs.forEach(q=>{if(q.t==$('#bt').value&&q.n>=a&&q.n<=b)q.topic=t});lst()}
 async function saveSet(){await putSet(pending);vHome()}
 async function start(){const ids=[...document.querySelectorAll('.ck:checked')].map(c=>+c.value);if(!ids.length){alert('Pilih minimal satu set.');return}
  const ss=(await allSets()).filter(s=>ids.includes(s.id));S={qs:ss.flatMap(s=>s.qs),ans:[],i:0,end:Date.now()+(+$('#tm').value||1)*60000};S.tm=setInterval(tick,1000);vTest()}
@@ -107,7 +121,7 @@ function fin(c){const un=S.qs.filter((_,i)=>!S.ans[i]).length;if(c&&!confirm('Se
 function vRes(rows){const T=agg(rows,r=>'T').T||{p:0,m:0},bad=rows.filter(r=>r.m&&r.p<r.m);
  H('<h2>Hasil</h2><div class="card" style="text-align:center"><div style="font-size:42px;font-weight:700">'+T.p+'</div><div class="mu">dari '+T.m+' poin</div></div><div class="card"><b>Per materi</b>'+Object.entries(agg(rows,r=>r.t)).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Per topik</b>'+Object.entries(agg(rows,r=>r.t+' · '+r.topic)).map(e=>bar(...e)).join('')+'</div><h3>Pembahasan ('+bad.length+' soal)</h3>'+
  bad.map(r=>{const q=r.q,kk=q.t=='TKP'?'poin tertinggi '+Object.entries(q.pts).sort((a,b)=>b[1]-a[1])[0][0]:'kunci '+q.key;
-  return'<details class="card"><summary>No. '+q.n+' ('+q.t+') · jawabanmu '+(r.a||'kosong')+(q.t=='TKP'&&r.a?' ('+r.p+' poin)':'')+' · '+kk+'</summary>'+qBody(q)+optList(q,1)+'<p><b>Pembahasan</b></p>'+(q.exp?'<p style="white-space:pre-line">'+esc(q.exp)+'</p>':'')+(q.expImg?'<details><summary>Lihat versi gambar</summary><img class="q" src="'+q.expImg+'"></details>':'')+'</details>'}).join('')+'<button class="p" onclick="vHome()">Selesai</button>')}
+  return'<details class="card"><summary>No. '+q.n+' ('+q.t+') · jawabanmu '+(r.a||'kosong')+(q.t=='TKP'&&r.a?' ('+r.p+' poin)':'')+' · '+kk+'</summary>'+qBody(q)+optList(q,1)+'<p><b>Pembahasan</b></p>'+expHtml(q)+'</details>'}).join('')+'<button class="p" onclick="vHome()">Selesai</button>')}
 function vRekap(){const h=hist(),rows=h.flatMap(x=>x.rows).map(r=>({t:r.t,topic:r.k,p:r.p,m:r.m})),tp=agg(rows,r=>r.t+' · '+r.topic),
  weak=Object.entries(tp).filter(e=>e[1].m).sort((a,b)=>a[1].p/a[1].m-b[1].p/b[1].m).slice(0,5);
  H('<h2>Rekap</h2>'+(h.length?'<div class="card"><b>Per materi ('+h.length+' try out)</b>'+Object.entries(agg(rows,r=>r.t)).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Perlu ditingkatkan</b>'+weak.map(e=>bar(...e)).join('')+'</div><div class="card"><b>Semua topik</b>'+Object.entries(tp).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Riwayat</b>'+h.slice().reverse().map(x=>'<div class="mu">'+new Date(x.d).toLocaleString('id-ID')+' — '+Object.entries(agg(x.rows.map(r=>({t:r.t,p:r.p,m:r.m})),r=>r.t)).map(([k,v])=>k+' '+v.p+'/'+v.m).join(' · ')+'</div>').join('')+'</div><button onclick="clr()">Hapus riwayat</button> ':'<p class="mu">Belum ada riwayat.</p>')+'<button onclick="vHome()">Kembali</button>')}
