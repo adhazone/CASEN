@@ -1,0 +1,103 @@
+<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Try Out CASN</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1e;--mu:#6b6b72;--c:#f2f2f5;--ac:#2f6fed;--bd:#d9d9df}
+@media(prefers-color-scheme:dark){:root{--bg:#17171a;--fg:#ececf0;--mu:#9a9aa3;--c:#242428;--ac:#6a9bff;--bd:#3a3a40}}
+*{box-sizing:border-box}body{font:16px system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:760px;margin:auto;padding:12px}
+button,input,select{font:inherit;color:inherit}
+button{background:var(--c);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--ac);color:#fff;border:0}
+.card{background:var(--c);border-radius:12px;padding:12px;margin:10px 0}
+input,select{padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);width:100%;margin:4px 0}
+img.q{width:100%;background:#fff;border-radius:8px;border:1px solid var(--bd);margin:6px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bar{height:10px;background:var(--bd);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.grid{display:flex;flex-wrap:wrap;gap:5px}.grid button{width:44px;padding:8px 0}
+.grid .a{background:var(--ac);color:#fff}.grid .cur{outline:3px solid var(--fg)}
+.opt{flex:1;min-width:50px;font-weight:700}.opt.s{background:var(--ac);color:#fff}
+.mu{color:var(--mu);font-size:14px}summary{cursor:pointer}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script></head>
+<body><div id="app"></div>
+<script>
+const $=s=>document.querySelector(s),app=$('#app'),H=h=>{app.innerHTML=h};
+let S,pending;
+/* ---------- penyimpanan (hanya di browser ini) ---------- */
+const db=new Promise((r,j)=>{const q=indexedDB.open('tryout',1);q.onupgradeneeded=()=>q.result.createObjectStore('sets',{keyPath:'id'});q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error)});
+const tx=async(m,f)=>{const d=await db;return new Promise((r,j)=>{const t=d.transaction('sets',m),q=f(t.objectStore('sets'));t.oncomplete=()=>r(q&&q.result);t.onerror=()=>j(t.error)})};
+const allSets=()=>tx('readonly',s=>s.getAll()),putSet=o=>tx('readwrite',s=>s.put(o)),delSet=id=>tx('readwrite',s=>s.delete(id));
+const hist=()=>JSON.parse(localStorage.getItem('hist')||'[]');
+/* ---------- pembaca PDF ---------- */
+const PV='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob(['importScripts("'+PV+'pdf.worker.min.js")'],{type:'text/javascript'}));
+function trim(c){const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let y=c.height-1;outer:for(;y>0;y--)for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;if(d[i]<235||d[i+1]<235||d[i+2]<235)break outer}
+ const h=Math.min(c.height,y+10);if(h>=c.height)return c;const n=document.createElement('canvas');n.width=c.width;n.height=h;n.getContext('2d').drawImage(c,0,0);return n}
+function stitch(cs){if(!cs.length)return null;const w=Math.max(...cs.map(c=>c.width)),h=cs.reduce((a,c)=>a+c.height,0),c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,w,h);let y=0;cs.forEach(k=>{g.drawImage(k,0,y);y+=k.height});return c.toDataURL('image/jpeg',.72)}
+async function parsePdf(file,isKey,onP){
+ const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,out={},Z=1.6;let cur=null,last=0;
+ const ent=n=>out[n]||(out[n]={c:[],t:''});
+ for(let p=1;p<=pdf.numPages;p++){
+  onP(p,pdf.numPages);
+  const pg=await pdf.getPage(p),W=pg.getViewport({scale:1}).width,Hh=pg.getViewport({scale:1}).height,tc=await pg.getTextContent();
+  const its=tc.items.filter(i=>i.str.trim()).map(i=>({s:i.str,x:i.transform[4],w:i.width,y:Hh-i.transform[5],h:i.height||10})).filter(i=>i.y<Hh*.93),segs=[];
+  for(const k of[0,1]){
+   const it=its.filter(i=>(i.x<W/2)==(k==0)).sort((a,b)=>a.y-b.y);if(!it.length)continue;
+   const ls=[];for(const i of it){const l=ls[ls.length-1];if(l&&Math.abs(i.y-l.y)<4)l.items.push(i);else ls.push({items:[i]})}
+   const x0=Math.min(...it.map(i=>i.x)),x1=Math.max(...it.map(i=>i.x+i.w)),top=Hh*.03,bot=Hh*.93,st=[];let own=cur;
+   for(const l of ls){
+    l.items.sort((a,b)=>a.x-b.x);l.t=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();l.top=Math.min(...l.items.map(i=>i.y-i.h));
+    const m=isKey?l.t.match(/^(\d{1,3})\s*Jawab\s*an\s*:?\s*([A-E])\b/i):l.t.match(/^(\d{1,3})\s*\.\s*\S/),n=m&&+m[1];
+    if(m&&(isKey||(l.items[0].x<x0+45&&(!last||(n>last&&n<=last+3))))){st.push({n,top:l.top});own=n;last=n;if(isKey)ent(n).a=m[2].toUpperCase()}
+    if(own!=null)ent(own).t+=l.t+'\n'}
+   const f=st.length?st[0].top:bot;
+   if(cur!=null&&f-top>14)segs.push({n:cur,y0:top,y1:f-3,x0,x1});
+   st.forEach((s,j)=>segs.push({n:s.n,y0:s.top-3,y1:j+1<st.length?st[j+1].top-3:bot,x0,x1}));cur=own}
+  if(!segs.length)continue;
+  const v2=pg.getViewport({scale:Z}),cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
+  cv.width=v2.width;cv.height=v2.height;cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);
+  await pg.render({canvasContext:cx,viewport:v2}).promise;
+  for(const s of segs){const sx=Math.max(0,s.x0-8)*Z,w=Math.min(W,s.x1+8)*Z-sx,sy=Math.max(0,s.y0)*Z,h=(s.y1*Z)-sy;if(h<6||w<6)continue;
+   const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d',{willReadFrequently:true});g.fillStyle='#fff';g.fillRect(0,0,w,h);g.drawImage(cv,sx,sy,w,h,0,0,w,h);ent(s.n).c.push(trim(c))}}
+ return out}
+function keyInfo(o){const t=o.t.replace(/\n/g,' '),tp=(t.match(/Topik\s*:\s*(.+?)(?=\s+Pilih|\s*$)/i)||[])[1],pts={};
+ o.t.split('\n').forEach(l=>{const m=l.trim().match(/^([A-E])\s+([1-5])$/);if(m)pts[m[1]]=+m[2]});
+ return{topic:tp?tp.slice(0,70).trim():'',pts:Object.keys(pts).length>=4?pts:null}}
+/* ---------- tampilan ---------- */
+const agg=(rs,f)=>{const o={};rs.forEach(r=>{const k=f(r);o[k]=o[k]||{p:0,m:0};o[k].p+=r.p;o[k].m+=r.m});return o};
+const bar=(k,v)=>{const pc=v.m?Math.round(100*v.p/v.m):0;return'<div style="margin:8px 0"><div class="row" style="justify-content:space-between"><span>'+k+'</span><span class="mu">'+v.p+'/'+v.m+' · '+pc+'%</span></div><div class="bar"><i style="width:'+pc+'%"></i></div></div>'};
+async function vHome(){const ss=await allSets();
+ H('<h2>Try Out CASN</h2><div class="card">'+(ss.length?ss.map(s=>'<label class="row"><input type="checkbox" class="ck" value="'+s.id+'" data-n="'+s.qs.length+'" style="width:auto"><span style="flex:1">'+s.name+' <span class="mu">'+s.qs.length+' soal · '+[...new Set(s.qs.map(q=>q.t))].join('+')+'</span></span><button type="button" onclick="del('+s.id+')">Hapus</button></label>').join(''):'<p class="mu">Belum ada soal. Impor PDF dulu.</p>')+'</div><div class="card">Waktu (menit)<input id="tm" type="number" value="100"><p class="mu">Otomatis menyesuaikan jumlah soal (110 soal = 100 menit), bisa kamu ubah.</p></div><div class="row"><button class="p" onclick="start()">Mulai tes</button><button onclick="vImport()">Impor soal</button><button onclick="vRekap()">Rekap</button></div><p class="mu">Soal tersimpan hanya di browser ini, tidak ada di GitHub.</p>');
+ document.querySelectorAll('.ck').forEach(c=>c.onchange=()=>{const n=[...document.querySelectorAll('.ck:checked')].reduce((a,x)=>a+ +x.dataset.n,0);$('#tm').value=Math.max(1,Math.round(n*100/110))})}
+async function del(id){if(confirm('Hapus set ini?')){await delSet(id);vHome()}}
+function vImport(){H('<h2>Impor soal</h2><div class="card"><input id="nm" placeholder="Nama set, mis. Paket 2 TIU"><select id="ty"><option>TIU</option><option>TWK</option><option>TKP</option><option value="SKD">Semua (TWK 1-30, TIU 31-65, TKP 66-110)</option></select><p class="mu">PDF soal</p><input type="file" id="fs" accept="application/pdf"><p class="mu">PDF kunci &amp; pembahasan</p><input type="file" id="fk" accept="application/pdf"><button class="p" id="go">Proses</button><p id="st" class="mu"></p></div><button onclick="vHome()">Kembali</button>');
+ $('#go').onclick=async()=>{const f=$('#fs').files[0],k=$('#fk').files[0],st=$('#st');if(!f||!k){st.textContent='Pilih kedua PDF dulu.';return}
+  try{const q=await parsePdf(f,false,(p,n)=>st.textContent='Membaca soal '+p+'/'+n+'...'),key=await parsePdf(k,true,(p,n)=>st.textContent='Membaca kunci '+p+'/'+n+'...'),ty=$('#ty').value;
+   const qs=Object.keys(q).map(Number).sort((a,b)=>a-b).map(n=>{const ke=key[n],i=ke?keyInfo(ke):{};return{n,t:ty=='SKD'?(n<=30?'TWK':n<=65?'TIU':'TKP'):ty,img:stitch(q[n].c),key:ke&&ke.a,pts:i.pts,topic:i.topic||'',exp:ke?stitch(ke.c):null}});
+   if(!qs.length)throw new Error('tidak ada soal terbaca');pending={id:Date.now(),name:$('#nm').value||f.name,qs};vReview()}catch(e){st.textContent='Gagal: '+e.message}}}
+function vReview(){const qs=pending.qs,nums=qs.map(q=>q.n),miss=[];for(let i=nums[0];i<=nums[nums.length-1];i++)if(!nums.includes(i))miss.push(i);
+ const nk=qs.filter(q=>!q.key).map(q=>q.n),tk=qs.some(q=>q.t=='TKP'&&!q.pts);
+ H('<h2>Cek hasil</h2><div class="card">'+qs.length+' soal terbaca.'+(miss.length?'<br>Nomor tidak terbaca: '+miss.join(', '):'')+(nk.length?'<br>Tanpa kunci: '+nk.join(', '):'')+(tk?'<br>Ada TKP tanpa tabel poin (nilainya 0).':'')+'</div><div class="card"><b>Isi topik massal</b><div class="row"><input id="a" type="number" placeholder="dari" style="width:80px"><input id="b" type="number" placeholder="sampai" style="width:80px"><input id="tp" placeholder="Topik, mis. Figural" style="flex:1"><button onclick="setTp()">Isi</button></div></div><div id="lst"></div><div class="row"><button class="p" onclick="saveSet()">Simpan</button><button onclick="vHome()">Batal</button></div>');lst()}
+function lst(){$('#lst').innerHTML=pending.qs.map((q,i)=>'<div class="card" onclick="pv('+i+')">No. '+q.n+' · '+q.t+' · '+(q.t=='TKP'?(q.pts?'poin '+Object.entries(q.pts).map(e=>e.join('=')).join(' '):'tanpa poin'):'kunci '+(q.key||'-'))+' · '+(q.topic||'(tanpa topik)')+'<div id="pv'+i+'"></div></div>').join('')}
+function pv(i){const e=$('#pv'+i),q=pending.qs[i];e.innerHTML=e.innerHTML?'':'<img class="q" src="'+q.img+'">'+(q.exp?'<img class="q" src="'+q.exp+'">':'')}
+function setTp(){const a=+$('#a').value,b=+$('#b').value,t=$('#tp').value.trim();pending.qs.forEach(q=>{if(q.n>=a&&q.n<=b)q.topic=t});lst()}
+async function saveSet(){await putSet(pending);vHome()}
+async function start(){const ids=[...document.querySelectorAll('.ck:checked')].map(c=>+c.value);if(!ids.length){alert('Pilih minimal satu set.');return}
+ const ss=(await allSets()).filter(s=>ids.includes(s.id));S={qs:ss.flatMap(s=>s.qs),ans:[],i:0,end:Date.now()+(+$('#tm').value||1)*60000};S.tm=setInterval(tick,1000);vTest()}
+function tick(){const s=Math.max(0,Math.round((S.end-Date.now())/1000)),e=$('#tmr');if(e)e.textContent='⏱ '+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');if(!s)fin(0)}
+function vTest(){const q=S.qs[S.i];
+ H('<div class="row" style="justify-content:space-between"><b id="tmr"></b><span class="mu">'+(S.i+1)+'/'+S.qs.length+' · '+q.t+'</span><button onclick="gridT()">Daftar soal</button></div><div id="gd" class="card" style="display:none"></div><img class="q" src="'+q.img+'"><div class="row" style="margin:10px 0">'+'ABCDE'.split('').map(l=>'<button class="opt '+(S.ans[S.i]==l?'s':'')+'" onclick="pick(\''+l+'\')">'+l+'</button>').join('')+'</div><div class="row"><button onclick="go(-1)">◀</button><button onclick="go(1)">▶</button><button class="p" style="margin-left:auto" onclick="fin(1)">Selesai</button></div>');tick()}
+function gridT(){const g=$('#gd');if(g.style.display=='none'){g.style.display='block';g.innerHTML='<div class="grid">'+S.qs.map((q,i)=>'<button class="'+(S.ans[i]?'a ':'')+(i==S.i?'cur':'')+'" onclick="S.i='+i+';vTest()">'+(i+1)+'</button>').join('')+'</div>'}else g.style.display='none'}
+function pick(l){S.ans[S.i]=S.ans[S.i]==l?undefined:l;vTest()}
+function go(d){S.i=Math.min(S.qs.length-1,Math.max(0,S.i+d));vTest();scrollTo(0,0)}
+function fin(c){const un=S.qs.filter((_,i)=>!S.ans[i]).length;if(c&&!confirm('Selesaikan tes? '+un+' soal belum dijawab.'))return;clearInterval(S.tm);
+ const rows=S.qs.map((q,i)=>{const a=S.ans[i];let p=0,m=5;if(q.t=='TKP'){if(!q.pts)m=0;else if(a)p=q.pts[a]||0}else if(!q.key)m=0;else if(a&&a==q.key)p=5;return{t:q.t,topic:q.topic||'umum',p,m,a,q}});
+ const h=hist();h.push({d:Date.now(),rows:rows.map(r=>({t:r.t,k:r.topic,p:r.p,m:r.m}))});localStorage.setItem('hist',JSON.stringify(h));vRes(rows)}
+function vRes(rows){const T=agg(rows,r=>'T').T||{p:0,m:0},bad=rows.filter(r=>r.m&&r.p<r.m);
+ H('<h2>Hasil</h2><div class="card" style="text-align:center"><div style="font-size:42px;font-weight:700">'+T.p+'</div><div class="mu">dari '+T.m+' poin</div></div><div class="card"><b>Per materi</b>'+Object.entries(agg(rows,r=>r.t)).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Per topik</b>'+Object.entries(agg(rows,r=>r.t+' · '+r.topic)).map(e=>bar(...e)).join('')+'</div><h3>Pembahasan ('+bad.length+' soal)</h3>'+
+ bad.map(r=>{const q=r.q,kk=q.t=='TKP'?'poin tertinggi '+Object.entries(q.pts).sort((a,b)=>b[1]-a[1])[0][0]:'kunci '+q.key;
+  return'<details class="card"><summary>No. '+q.n+' ('+q.t+') · jawabanmu '+(r.a||'kosong')+(q.t=='TKP'&&r.a?' ('+r.p+' poin)':'')+' · '+kk+'</summary><img class="q" src="'+q.img+'">'+(q.exp?'<p><b>Pembahasan</b></p><img class="q" src="'+q.exp+'">':'')+'</details>'}).join('')+'<button class="p" onclick="vHome()">Selesai</button>')}
+function vRekap(){const h=hist(),rows=h.flatMap(x=>x.rows).map(r=>({t:r.t,topic:r.k,p:r.p,m:r.m})),tp=agg(rows,r=>r.t+' · '+r.topic),
+ weak=Object.entries(tp).filter(e=>e[1].m).sort((a,b)=>a[1].p/a[1].m-b[1].p/b[1].m).slice(0,5);
+ H('<h2>Rekap</h2>'+(h.length?'<div class="card"><b>Per materi ('+h.length+' try out)</b>'+Object.entries(agg(rows,r=>r.t)).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Perlu ditingkatkan</b>'+weak.map(e=>bar(...e)).join('')+'</div><div class="card"><b>Semua topik</b>'+Object.entries(tp).map(e=>bar(...e)).join('')+'</div><div class="card"><b>Riwayat</b>'+h.slice().reverse().map(x=>'<div class="mu">'+new Date(x.d).toLocaleString('id-ID')+' — '+Object.entries(agg(x.rows.map(r=>({t:r.t,p:r.p,m:r.m})),r=>r.t)).map(([k,v])=>k+' '+v.p+'/'+v.m).join(' · ')+'</div>').join('')+'</div><button onclick="clr()">Hapus riwayat</button> ':'<p class="mu">Belum ada riwayat.</p>')+'<button onclick="vHome()">Kembali</button>')}
+function clr(){if(confirm('Hapus semua riwayat?')){localStorage.removeItem('hist');vRekap()}}
+vHome();
+</script></body></html>
